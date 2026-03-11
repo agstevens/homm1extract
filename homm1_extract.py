@@ -21,9 +21,11 @@ Output goes into a directory named after the .agg file (e.g. 'heroes/').
 
 Written by Andrew G. Stevens with assistance from Claude Sonnet 4.6.
 
-Attribution also goes to some Java code from James Koppel about the HOMM2 AGG format 
-and some notes found on celestial haven - there were some minor differences and 
-errors that were debugged and have been documented here and in the code.
+Attribution also goes to some Java code from James Koppel about the 
+HOMM2 AGG format and some notes derived from it here:
+https://thaddeus002.github.io/fheroes2-WoT/infos/informations.html - 
+there were some minor differences and errors that were debugged and 
+have been documented here and in the code.
 
 ## License
 
