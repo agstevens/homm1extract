@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.16)
+project(homm1_extract CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Warnings
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# zlib (required for PNG output)
+find_package(ZLIB REQUIRED)
+
+# Source files
+set(SOURCES
+    src/main.cpp
+    src/agg.cpp
+    src/bmp.cpp
+    src/icn.cpp
+    src/image.cpp
+    src/palette.cpp
+    src/til.cpp
+)
+
+add_executable(homm1_extract ${SOURCES})
+
+target_include_directories(homm1_extract PRIVATE include)
+
+target_link_libraries(homm1_extract PRIVATE ZLIB::ZLIB)
+
+# Install target (optional)
+install(TARGETS homm1_extract DESTINATION bin)

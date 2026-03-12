@@ -1,0 +1,186 @@
+#include "icn.h"
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
+#include <set>
+
+namespace homm1 {
+
+namespace fs = std::filesystem;
+
+// ---------------------------------------------------------------------------
+// Little-endian helpers
+// ---------------------------------------------------------------------------
+static uint16_t r_u16(const uint8_t* d, size_t& p) {
+    uint16_t v; std::memcpy(&v, d + p, 2); p += 2; return v;
+}
+static int16_t r_s16(const uint8_t* d, size_t& p) {
+    int16_t v; std::memcpy(&v, d + p, 2); p += 2; return v;
+}
+static uint32_t r_u32(const uint8_t* d, size_t& p) {
+    uint32_t v; std::memcpy(&v, d + p, 4); p += 4; return v;
+}
+
+// ---------------------------------------------------------------------------
+// decode_icn
+// ---------------------------------------------------------------------------
+
+IcnFile decode_icn(const std::vector<uint8_t>& raw, const Palette& pal) {
+    IcnFile result;
+    if (raw.size() < 6)
+        throw std::runtime_error("ICN file too small");
+
+    const uint8_t* d = raw.data();
+    size_t pos = 0;
+
+    const uint16_t n_sprites = r_u16(d, pos);
+    /* total_data_size = */ r_u32(d, pos); // unused — we use raw.size()
+
+    if (n_sprites == 0) return result;
+
+    // Read sprite headers (12 bytes each).
+    result.headers.reserve(n_sprites);
+    for (uint16_t i = 0; i < n_sprites; ++i) {
+        SpriteHeader h;
+        h.offset_x = r_s16(d, pos);
+        h.offset_y = r_s16(d, pos);
+        h.width    = r_u16(d, pos);
+        h.height   = r_u16(d, pos);
+        const uint32_t packed = r_u32(d, pos);
+        h.type     = static_cast<uint8_t>((packed >> 24) & 0xFF);
+        h.data_off = packed & 0x00FFFFFFu;
+        result.headers.push_back(h);
+    }
+
+    // Build a sorted set of all data_off values so we can find each sprite's
+    // end boundary — sprite data may not be laid out in header order on disk.
+    std::set<uint32_t> dof_set;
+    for (const auto& h : result.headers) dof_set.insert(h.data_off);
+    std::vector<uint32_t> sorted_dofs(dof_set.begin(), dof_set.end());
+
+    auto data_end_for = [&](uint32_t dof) -> size_t {
+        for (uint32_t d2 : sorted_dofs)
+            if (d2 > dof) return 6 + d2;
+        return raw.size();
+    };
+
+    result.frames.reserve(n_sprites);
+
+    for (uint16_t idx = 0; idx < n_sprites; ++idx) {
+        const SpriteHeader& hdr = result.headers[idx];
+        if (hdr.width == 0 || hdr.height == 0) {
+            result.frames.emplace_back(); // empty placeholder
+            continue;
+        }
+
+        Image img(hdr.width, hdr.height); // all pixels start transparent
+
+        size_t p       = 6 + hdr.data_off;
+        size_t p_end   = data_end_for(hdr.data_off);
+        const bool mono = (hdr.type == 32);
+        int x = 0, y = 0;
+
+        while (p < p_end) {
+            const uint8_t cmd = d[p++];
+
+            if (mono) {
+                if (cmd == 0x00) {
+                    x = 0; ++y;
+                } else if (cmd == 0x80) {
+                    break;
+                } else if (cmd >= 0x01 && cmd <= 0x7F) {
+                    for (int n = 0; n < cmd; ++n)
+                        img.set_pixel(x++, y, 0, 0, 0, 255);
+                } else {
+                    // 0x81–0xFF: skip (cmd-0x80) transparent pixels
+                    x += cmd - 0x80;
+                }
+            } else {
+                if (cmd == 0x00) {
+                    x = 0; ++y;
+                } else if (cmd == 0x80) {
+                    break;
+                } else if (cmd >= 0x01 && cmd <= 0x7F) {
+                    // Literal run: next cmd bytes are palette indices
+                    for (int n = 0; n < cmd && p < p_end; ++n) {
+                        const uint8_t ci = d[p++];
+                        img.set_pixel(x++, y, pal[ci].r, pal[ci].g, pal[ci].b, 255);
+                    }
+                } else if (cmd >= 0x81 && cmd <= 0xBF) {
+                    // Skip (cmd-0x80) transparent pixels
+                    x += cmd - 0x80;
+                } else if (cmd == 0xC0) {
+                    // Shadow: count in next byte (use byte%4 if nonzero, else read another)
+                    if (p >= p_end) break;
+                    const uint8_t nxt = d[p++];
+                    int n_sh = nxt % 4;
+                    if (n_sh == 0) {
+                        if (p >= p_end) break;
+                        n_sh = d[p++];
+                    }
+                    for (int n = 0; n < n_sh; ++n)
+                        img.set_pixel(x++, y, 0, 0, 0, 64);
+                } else if (cmd == 0xC1) {
+                    // RLE: next=count, after=color
+                    if (p + 1 >= p_end) break;
+                    const int count = d[p++];
+                    const uint8_t ci = d[p++];
+                    for (int n = 0; n < count; ++n)
+                        img.set_pixel(x++, y, pal[ci].r, pal[ci].g, pal[ci].b, 255);
+                } else {
+                    // 0xC2–0xFF: RLE, count=(cmd-0xC0), color=next byte
+                    if (p >= p_end) break;
+                    const int count = cmd - 0xC0;
+                    const uint8_t ci = d[p++];
+                    for (int n = 0; n < count; ++n)
+                        img.set_pixel(x++, y, pal[ci].r, pal[ci].g, pal[ci].b, 255);
+                }
+            }
+        }
+
+        result.frames.push_back(std::move(img));
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// save_icn
+// ---------------------------------------------------------------------------
+
+void save_icn(const IcnFile& icn, const std::string& out_dir) {
+    fs::create_directories(out_dir);
+
+    const int n = static_cast<int>(icn.headers.size());
+    for (int i = 0; i < n; ++i) {
+        if (i >= static_cast<int>(icn.frames.size())) break;
+        const auto& img = icn.frames[i];
+        if (img.width == 0 || img.height == 0) continue;
+
+        char name[32];
+        std::snprintf(name, sizeof(name), "%04d.png", i);
+        save_png(img, out_dir + "/" + name);
+    }
+
+    // Write spec.xml
+    std::ofstream xml(out_dir + "/spec.xml");
+    if (!xml) throw std::runtime_error("Cannot write spec.xml in " + out_dir);
+    xml << "<icn count=\"" << n << "\">\n";
+    for (int i = 0; i < n; ++i) {
+        const auto& h = icn.headers[i];
+        char fname[32];
+        std::snprintf(fname, sizeof(fname), "%04d.png", i);
+        xml << "  <sprite id=\"" << i << "\""
+            << " file=\"" << fname << "\""
+            << " offsetX=\"" << h.offset_x << "\""
+            << " offsetY=\"" << h.offset_y << "\""
+            << " width=\""   << h.width    << "\""
+            << " height=\""  << h.height   << "\""
+            << " type=\""    << static_cast<int>(h.type) << "\"/>\n";
+    }
+    xml << "</icn>\n";
+}
+
+} // namespace homm1

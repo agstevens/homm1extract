@@ -2,6 +2,8 @@
 
 A Python tool for extracting and decoding all asset files from the `HEROES.AGG` archive used by Heroes of Might and Magic I.
 
+Update: C++ 17 version for Mac/Unix also added
+
 ## Requirements
 
 ```bash
@@ -21,6 +23,32 @@ python homm1_extract.py editor.agg
 All files are extracted into a subdirectory named after the archive (e.g. `heroes/`). Image files are decoded to PNG. Sound and raw data files are saved verbatim.
 
 Tested on the HEROES.AGG file from the retail version from good old games (GOG), the windows 95 editor (editor.agg), and the HOMM 1 Demo version HEROES.AGG files. The demo is included in the repsitory. The AGG files seem to be identical for the Demo and the full game. I believe the demo version would only let you play 1 month in game time, so 28 days.
+
+---
+
+## C++ 17 Version Build Instructions
+The C++ version is found in the cpp/ folder of this project.
+
+On MacOS:
+```bash
+brew install cmake
+brew install sdl2 sdl2_mixer sdl2_image
+
+mkdir build
+
+cd build
+
+cmake .. && make -j$(sysctl -n hw.ncpu)
+```
+
+Unix version is untested right now, but theoretically, to use it, rename CMakeLists_unix.txt to CMakeLists.txt and make sure you have Cmake and zlib installed.
+
+## Usage
+
+Assuming Heroes.agg is copied into the program directory (one level below build/):
+```bash
+./homm1 ../Heroes.agg 
+```
 
 ---
 
