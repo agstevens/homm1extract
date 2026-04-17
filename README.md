@@ -144,10 +144,9 @@ The `packed` field encodes two values:
 | `0x00` | End of line — advance to start of next row |
 | `0x01`–`0x7F` | Literal run — next `N` bytes are palette color indices |
 | `0x80` | End of sprite data |
-| `0x81`–`0xBF` | Skip `N - 0x80` transparent pixels |
-| `0xC0` | Shadow pixels — count in next byte (use `byte % 4` if nonzero, else read a second byte for count); drawn as black at alpha 64 |
-| `0xC1` | RLE — next byte is count, byte after is color index |
-| `0xC2`–`0xFF` | RLE — `N - 0xC0` pixels of the color in the next byte |
+| `0x81`–`0xFF` | Skip `N - 0x80` transparent pixels |
+
+> **HoMM1 vs HoMM2:** Online documentation for the ICN format often describes additional commands in the `0x81`–`0xFF` range (shadow pixels, RLE runs, sub-commands at `0xC0`–`0xFF`). Those commands exist in **Heroes of Might and Magic II** but not in HoMM1. In HoMM1 the entire `0x81`–`0xFF` range is purely a transparent pixel skip. Using the HoMM2 interpretation on HoMM1 data produces corrupted sprites. This was verified empirically by decoding `strip.icn` sprite 0 (a 640×212 UI panel background): with the HoMM2 scheme the `0xC0`–`0xFF` bytes were misread as RLE/shadow commands, leaving most rows short; with the simple skip the sprite decodes correctly to the full-width gold-bordered panel frame seen in-game.
 
 **Pixel encoding — monochrome sprites (type = 32):**
 

@@ -108,34 +108,11 @@ IcnFile decode_icn(const std::vector<uint8_t>& raw, const Palette& pal) {
                         const uint8_t ci = d[p++];
                         img.set_pixel(x++, y, pal[ci].r, pal[ci].g, pal[ci].b, 255);
                     }
-                } else if (cmd >= 0x81 && cmd <= 0xBF) {
-                    // Skip (cmd-0x80) transparent pixels
-                    x += cmd - 0x80;
-                } else if (cmd == 0xC0) {
-                    // Shadow: count in next byte (use byte%4 if nonzero, else read another)
-                    if (p >= p_end) break;
-                    const uint8_t nxt = d[p++];
-                    int n_sh = nxt % 4;
-                    if (n_sh == 0) {
-                        if (p >= p_end) break;
-                        n_sh = d[p++];
-                    }
-                    for (int n = 0; n < n_sh; ++n)
-                        img.set_pixel(x++, y, 0, 0, 0, 64);
-                } else if (cmd == 0xC1) {
-                    // RLE: next=count, after=color
-                    if (p + 1 >= p_end) break;
-                    const int count = d[p++];
-                    const uint8_t ci = d[p++];
-                    for (int n = 0; n < count; ++n)
-                        img.set_pixel(x++, y, pal[ci].r, pal[ci].g, pal[ci].b, 255);
                 } else {
-                    // 0xC2–0xFF: RLE, count=(cmd-0xC0), color=next byte
-                    if (p >= p_end) break;
-                    const int count = cmd - 0xC0;
-                    const uint8_t ci = d[p++];
-                    for (int n = 0; n < count; ++n)
-                        img.set_pixel(x++, y, pal[ci].r, pal[ci].g, pal[ci].b, 255);
+                    // 0x81–0xFF: skip (cmd-0x80) transparent pixels.
+                    // HoMM1 uses the full range purely for transparency.
+                    // Unlike HoMM2, there are no shadow or RLE sub-commands.
+                    x += cmd - 0x80;
                 }
             }
         }

@@ -152,14 +152,13 @@ def save_palette_swatch(palette, path):
 #   u32  packed     -- high byte = type (0=normal, 32=monochrome)
 #                      low 24 bits = data_off (relative to file byte 6)
 #
-# Pixel encoding (normal sprites):
+# Pixel encoding (normal sprites) - HoMM1 format:
 #   0x00        end of line; advance to start of next row
 #   0x01-0x7F   literal run: next N bytes are palette colour indices
 #   0x80        end of sprite data
-#   0x81-0xBF   skip (N-0x80) transparent pixels
-#   0xC0        shadow pixels: count in next byte (mod 4 if nonzero, else byte after)
-#   0xC1        RLE: next byte = count, byte after = colour index
-#   0xC2-0xFF   RLE: (N-0xC0) pixels of colour in next byte
+#   0x81-0xFF   skip (N-0x80) transparent pixels
+#               Note: unlike HoMM2, there are no shadow or RLE commands.
+#               The full 0x81-0xFF range is purely transparent skip.
 #
 # Pixel encoding (monochrome, type=32):
 #   0x00        end of line
@@ -234,14 +233,14 @@ def decode_icn(icn_data, palette, out_dir):
             cmd = icn_data[p]; p += 1
 
             if mono:
-                if   cmd == 0x00:
+                if cmd == 0x00:
                     x = 0; y += 1
                 elif cmd == 0x80:
                     break
                 elif 0x01 <= cmd <= 0x7F:
                     for _ in range(cmd):
                         set_px(x, y, 0, 0, 0, 255); x += 1
-                else:
+                else:  # 0x81-0xFF: skip transparent pixels
                     x += cmd - 0x80
             else:
                 if cmd == 0x00:
@@ -249,38 +248,17 @@ def decode_icn(icn_data, palette, out_dir):
                 elif cmd == 0x80:
                     break
                 elif 0x01 <= cmd <= 0x7F:
+                    # Literal run: next cmd bytes are palette indices
                     for _ in range(cmd):
                         if p >= p_end: break
                         ci = icn_data[p]; p += 1
                         cr, cg, cb = palette[ci]
                         set_px(x, y, cr, cg, cb, 255); x += 1
-                elif 0x81 <= cmd <= 0xBF:
-                    x += cmd - 0x80
-                elif cmd == 0xC0:
-                    if p >= p_end: break
-                    nxt = icn_data[p]; p += 1
-                    rem = nxt % 4
-                    if rem != 0:
-                        n_sh = rem
-                    else:
-                        if p >= p_end: break
-                        n_sh = icn_data[p]; p += 1
-                    for _ in range(n_sh):
-                        set_px(x, y, 0, 0, 0, 64); x += 1
-                elif cmd == 0xC1:
-                    if p + 1 >= p_end: break
-                    count = icn_data[p]; p += 1
-                    ci    = icn_data[p]; p += 1
-                    cr, cg, cb = palette[ci]
-                    for _ in range(count):
-                        set_px(x, y, cr, cg, cb, 255); x += 1
                 else:
-                    if p >= p_end: break
-                    count = cmd - 0xC0
-                    ci    = icn_data[p]; p += 1
-                    cr, cg, cb = palette[ci]
-                    for _ in range(count):
-                        set_px(x, y, cr, cg, cb, 255); x += 1
+                    # 0x81-0xFF: skip (cmd - 0x80) transparent pixels.
+                    # HoMM1 uses the full range purely for transparency;
+                    # unlike HoMM2 there are no shadow or RLE sub-commands.
+                    x += cmd - 0x80
 
         Image.frombytes('RGBA', (sw, sh), bytes(buf)).save(
             os.path.join(out_dir, f'{idx:04d}.png'))
